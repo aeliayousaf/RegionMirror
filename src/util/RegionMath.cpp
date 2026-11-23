@@ -47,6 +47,177 @@ bool ViewportToContent(PointF viewportPoint, FloatRect fitted, SizeI contentSize
     return true;
 }
 
+PointF ContentToViewport(PointF contentPoint, FloatRect fitted, SizeI contentSize)
+{
+    PointF out{};
+    if (fitted.empty() || contentSize.width <= 0 || contentSize.height <= 0) {
+        return out;
+    }
+    const float u = contentPoint.x / static_cast<float>(contentSize.width);
+    const float v = contentPoint.y / static_cast<float>(contentSize.height);
+    out.x = fitted.left + u * fitted.width();
+    out.y = fitted.top + v * fitted.height();
+    return out;
+}
+
+FloatRect NormalizedToViewportRect(FloatRect normalized, FloatRect fitted, SizeI contentSize)
+{
+    FloatRect out{};
+    if (fitted.empty() || contentSize.width <= 0 || contentSize.height <= 0 || normalized.empty()) {
+        return out;
+    }
+    const PointF tl = ContentToViewport(
+        { normalized.left * static_cast<float>(contentSize.width),
+          normalized.top * static_cast<float>(contentSize.height) },
+        fitted,
+        contentSize);
+    const PointF br = ContentToViewport(
+        { normalized.right * static_cast<float>(contentSize.width),
+          normalized.bottom * static_cast<float>(contentSize.height) },
+        fitted,
+        contentSize);
+    out.left = tl.x;
+    out.top = tl.y;
+    out.right = br.x;
+    out.bottom = br.y;
+    return out;
+}
+
+SelectionHit HitTestSelection(
+    PointF viewportPoint,
+    FloatRect normalizedSelection,
+    FloatRect fitted,
+    SizeI contentSize,
+    float handlePx)
+{
+    const FloatRect box = NormalizedToViewportRect(normalizedSelection, fitted, contentSize);
+    if (box.empty()) {
+        return SelectionHit::None;
+    }
+
+    const float hx = std::max(6.f, handlePx);
+    const float left = box.left;
+    const float right = box.right;
+    const float top = box.top;
+    const float bottom = box.bottom;
+
+    const bool nearL = std::abs(viewportPoint.x - left) <= hx;
+    const bool nearR = std::abs(viewportPoint.x - right) <= hx;
+    const bool nearT = std::abs(viewportPoint.y - top) <= hx;
+    const bool nearB = std::abs(viewportPoint.y - bottom) <= hx;
+    const bool inX = viewportPoint.x >= left - hx && viewportPoint.x <= right + hx;
+    const bool inY = viewportPoint.y >= top - hx && viewportPoint.y <= bottom + hx;
+
+    if (nearT && nearL) {
+        return SelectionHit::TopLeft;
+    }
+    if (nearT && nearR) {
+        return SelectionHit::TopRight;
+    }
+    if (nearB && nearL) {
+        return SelectionHit::BottomLeft;
+    }
+    if (nearB && nearR) {
+        return SelectionHit::BottomRight;
+    }
+    if (nearT && inX) {
+        return SelectionHit::Top;
+    }
+    if (nearB && inX) {
+        return SelectionHit::Bottom;
+    }
+    if (nearL && inY) {
+        return SelectionHit::Left;
+    }
+    if (nearR && inY) {
+        return SelectionHit::Right;
+    }
+    if (viewportPoint.x >= left && viewportPoint.x <= right &&
+        viewportPoint.y >= top && viewportPoint.y <= bottom) {
+        return SelectionHit::Move;
+    }
+    return SelectionHit::None;
+}
+
+bool ApplySelectionEdit(
+    SelectionHit hit,
+    FloatRect startCrop,
+    PointF startContent,
+    PointF currentContent,
+    SizeI contentSize,
+    FloatRect& outNormalized)
+{
+    if (hit == SelectionHit::None || contentSize.width <= 0 || contentSize.height <= 0 || startCrop.empty()) {
+        return false;
+    }
+
+    const float w = static_cast<float>(contentSize.width);
+    const float h = static_cast<float>(contentSize.height);
+    const float minSize = 1.f;
+
+    float left = startCrop.left * w;
+    float top = startCrop.top * h;
+    float right = startCrop.right * w;
+    float bottom = startCrop.bottom * h;
+
+    currentContent = ClampToContent(currentContent, contentSize);
+    startContent = ClampToContent(startContent, contentSize);
+    const float dx = currentContent.x - startContent.x;
+    const float dy = currentContent.y - startContent.y;
+
+    switch (hit) {
+    case SelectionHit::Move: {
+        const float width = right - left;
+        const float height = bottom - top;
+        left = std::clamp(left + dx, 0.f, w - width);
+        top = std::clamp(top + dy, 0.f, h - height);
+        right = left + width;
+        bottom = top + height;
+        break;
+    }
+    case SelectionHit::Left:
+        left = std::clamp(left + dx, 0.f, right - minSize);
+        break;
+    case SelectionHit::Right:
+        right = std::clamp(right + dx, left + minSize, w);
+        break;
+    case SelectionHit::Top:
+        top = std::clamp(top + dy, 0.f, bottom - minSize);
+        break;
+    case SelectionHit::Bottom:
+        bottom = std::clamp(bottom + dy, top + minSize, h);
+        break;
+    case SelectionHit::TopLeft:
+        left = std::clamp(left + dx, 0.f, right - minSize);
+        top = std::clamp(top + dy, 0.f, bottom - minSize);
+        break;
+    case SelectionHit::TopRight:
+        right = std::clamp(right + dx, left + minSize, w);
+        top = std::clamp(top + dy, 0.f, bottom - minSize);
+        break;
+    case SelectionHit::BottomLeft:
+        left = std::clamp(left + dx, 0.f, right - minSize);
+        bottom = std::clamp(bottom + dy, top + minSize, h);
+        break;
+    case SelectionHit::BottomRight:
+        right = std::clamp(right + dx, left + minSize, w);
+        bottom = std::clamp(bottom + dy, top + minSize, h);
+        break;
+    default:
+        return false;
+    }
+
+    if ((right - left) < minSize || (bottom - top) < minSize) {
+        return false;
+    }
+
+    outNormalized.left = left / w;
+    outNormalized.top = top / h;
+    outNormalized.right = right / w;
+    outNormalized.bottom = bottom / h;
+    return !outNormalized.empty();
+}
+
 PointF ClampToContent(PointF p, SizeI contentSize)
 {
     PointF out = p;

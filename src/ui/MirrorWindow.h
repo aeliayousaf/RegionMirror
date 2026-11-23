@@ -24,6 +24,8 @@ public:
     // 10-100 percent. Uses WS_EX_LAYERED + SetLayeredWindowAttributes.
     void SetOpacityPercent(int percent);
     int OpacityPercent() const { return m_opacityPercent; }
+    void SetAlwaysOnTop(bool enabled);
+    bool AlwaysOnTop() const { return m_alwaysOnTop; }
 
     HWND Hwnd() const { return m_hwnd; }
     bool IsVisible() const { return m_visible; }
@@ -56,6 +58,7 @@ private:
     HICON m_iconSmall = nullptr;
     bool m_iconsOwned = false;
     int m_opacityPercent = 100;
+    bool m_alwaysOnTop = false;
 };
 
 } // namespace rm

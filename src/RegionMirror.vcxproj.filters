@@ -26,6 +26,7 @@
     <ClCompile Include="render\GpuRenderer.cpp"><Filter>Render</Filter></ClCompile>
     <ClCompile Include="ui\MainWindow.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="ui\MirrorWindow.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="ui\SettingsWindow.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="util\Diagnostics.cpp"><Filter>Util</Filter></ClCompile>
     <ClCompile Include="util\DisplayEnum.cpp"><Filter>Util</Filter></ClCompile>
     <ClCompile Include="util\RegionMath.cpp"><Filter>Util</Filter></ClCompile>
@@ -39,6 +40,7 @@
     <ClInclude Include="render\GpuRenderer.h"><Filter>Render</Filter></ClInclude>
     <ClInclude Include="ui\MainWindow.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="ui\MirrorWindow.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="ui\SettingsWindow.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="util\Diagnostics.h"><Filter>Util</Filter></ClInclude>
     <ClInclude Include="util\DisplayEnum.h"><Filter>Util</Filter></ClInclude>
     <ClInclude Include="util\RegionMath.h"><Filter>Util</Filter></ClInclude>

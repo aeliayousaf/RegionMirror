@@ -48,9 +48,14 @@ LRESULT CALLBACK PreviewSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         }
         break;
     case WM_SETCURSOR:
-        if (app->IsSelectingRegion()) {
-            SetCursor(LoadCursorW(nullptr, IDC_CROSS));
-            return TRUE;
+        if (LOWORD(lParam) == HTCLIENT) {
+            POINT pt{};
+            GetCursorPos(&pt);
+            ScreenToClient(hwnd, &pt);
+            if (HCURSOR cursor = app->PreviewCursorAt(pt)) {
+                SetCursor(cursor);
+                return TRUE;
+            }
         }
         break;
     default:
@@ -71,6 +76,7 @@ RECT ClientRect(HWND hwnd)
 App::App(HINSTANCE instance)
     : m_instance(instance)
     , m_main(*this)
+    , m_settingsUi(*this)
     , m_capture(m_d3d, m_diagnostics)
 {
 }
@@ -123,14 +129,17 @@ bool App::Initialize()
     if (!m_main.Create(m_instance)) {
         return false;
     }
-    // Output window is created lazily on Start mirror so launch only shows the control UI.
+    // Output window is created lazily when a region is confirmed.
+    if (!m_settingsUi.Create(m_instance, m_main.Hwnd())) {
+        m_error = L"Failed to create the settings window.";
+    }
 
     if (!SetWindowSubclass(m_main.PreviewHwnd(), PreviewSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this))) {
         m_error = L"Failed to attach preview input handler.";
     }
 
     if (!EnsureGraphics()) {
-        m_error = L"Direct3D 11 initialization failed. Click Retry graphics.";
+        m_error = L"Direct3D 11 initialization failed. Open Settings and click Retry graphics.";
     }
 
     if (!m_captureSupported) {
@@ -138,8 +147,10 @@ bool App::Initialize()
     }
 
     RefreshMonitorList(true);
-    m_main.SetOutputMode(m_settings.outputMode);
-    m_main.SetOpacityPercent(m_settings.opacityPercent);
+    m_settingsUi.SetOutputMode(m_settings.outputMode);
+    m_settingsUi.SetOpacityPercent(m_settings.opacityPercent);
+    m_settingsUi.SetAlwaysOnTop(m_settings.alwaysOnTop);
+    m_settingsUi.SetShowDebug(m_settings.showDebug);
     m_main.ShowDebug(m_settings.showDebug);
 
     m_status = m_captureSupported ? L"Choose a source to begin." : m_error;
@@ -157,6 +168,7 @@ void App::Shutdown()
     }
     m_previewTarget.Destroy();
     m_mirror.Destroy();
+    m_settingsUi.Destroy();
     TearDownGraphics();
     PersistSettings();
 }
@@ -404,8 +416,10 @@ void App::OnSourcePicked()
                       L"If this is a game, try borderless windowed mode or choose the display instead.";
             m_item = nullptr;
         } else {
-            m_status = L"Source selected. Draw a region, then start the mirror.";
             m_previewNeedsPaint = true;
+            m_autoStartAfterSelect = true;
+            OnSelectRegion();
+            return;
         }
     } catch (winrt::hresult_error const& ex) {
         m_error = std::wstring(L"Capture start error: ") + std::wstring(ex.message());
@@ -450,11 +464,12 @@ void App::OnSelectRegion()
     UpdateControlState();
     UpdateStatus();
     m_previewNeedsPaint = true;
+    RenderPreview(true);
 }
 
-void App::OnEditRegion()
+void App::OnOpenSettings()
 {
-    OnSelectRegion();
+    m_settingsUi.Show();
 }
 
 void App::OnStartMirror()
@@ -508,6 +523,7 @@ void App::OnStartMirror()
     }
 
     m_mirror.SetOpacityPercent(m_settings.opacityPercent);
+    m_mirror.SetAlwaysOnTop(m_settings.alwaysOnTop);
     m_mirror.ShowOnDisplay(display, m_settings.outputMode, crop.width(), crop.height());
 
     RECT rc = ClientRect(m_mirror.Hwnd());
@@ -527,7 +543,7 @@ void App::OnStartMirror()
     }
 
     m_mirroring = true;
-    m_status = L"Mirroring.";
+    m_status = L"Mirroring. Drag the region on the preview to move or resize it.";
     PersistSettings();
     UpdateControlState();
     UpdateStatus();
@@ -587,15 +603,24 @@ void App::OnOpacityChanged(int percent)
         percent = 100;
     }
     m_settings.opacityPercent = percent;
-    m_main.SetOpacityPercent(percent);
+    m_settingsUi.SetOpacityPercent(percent);
     m_mirror.SetOpacityPercent(percent);
     PersistSettings();
 }
 
-void App::OnToggleDebug()
+void App::OnAlwaysOnTopChanged(bool enabled)
 {
-    m_settings.showDebug = !m_settings.showDebug;
-    m_main.ShowDebug(m_settings.showDebug);
+    m_settings.alwaysOnTop = enabled;
+    m_settingsUi.SetAlwaysOnTop(enabled);
+    m_mirror.SetAlwaysOnTop(enabled);
+    PersistSettings();
+}
+
+void App::OnShowDebugChanged(bool show)
+{
+    m_settings.showDebug = show;
+    m_settingsUi.SetShowDebug(show);
+    m_main.ShowDebug(show);
     PersistSettings();
     UpdateStatus();
 }
@@ -656,7 +681,7 @@ void App::OnEscapeFullscreen()
 {
     if (m_settings.outputMode == OutputMode::Fullscreen) {
         OnOutputModeChanged(OutputMode::Windowed);
-        m_main.SetOutputMode(OutputMode::Windowed);
+        m_settingsUi.SetOutputMode(OutputMode::Windowed);
         m_status = L"Exited fullscreen.";
         UpdateStatus();
     }
@@ -846,23 +871,21 @@ void App::RefreshMonitorList(bool keepSelection)
         }
     }
     m_selectedDisplayIndex = selected;
-    m_main.SetMonitorList(labels, selected);
+    m_settingsUi.SetMonitorList(labels, selected);
 }
 
 void App::UpdateControlState()
 {
     const bool hasSource = m_capture.IsActive() && !m_sourceClosed;
     const bool graphicsOk = m_d3d.IsValid() && !m_d3d.IsDeviceLost();
+    const bool selecting = m_selectMode == SelectMode::Selecting;
+
+    m_main.SetSourceButtonLabel(hasSource ? L"Change source" : L"Choose source");
     m_main.SetControlsEnabled(
-        m_captureSupported && graphicsOk,
-        hasSource && graphicsOk,
-        hasSource && graphicsOk && m_selectMode != SelectMode::Selecting,
-        hasSource && graphicsOk && m_hasSelection,
-        hasSource && graphicsOk && m_hasSelection && !m_mirroring,
+        m_captureSupported && graphicsOk && !selecting && m_editOp == EditOp::None,
         m_mirroring,
-        !m_displays.empty(),
-        true,
-        !graphicsOk);
+        true);
+    m_settingsUi.SetRetryEnabled(!graphicsOk);
 }
 
 void App::UpdateStatus()
@@ -950,23 +973,164 @@ FloatRect App::EffectiveCrop() const
     return { 0.f, 0.f, 1.f, 1.f };
 }
 
-void App::OnPreviewLButtonDown(POINT clientPt)
+bool App::PreviewGeometry(FloatRect& fitted, SizeI& contentSize) const
 {
-    if (m_selectMode != SelectMode::Selecting || !m_lastFrame.valid) {
-        return;
+    if (!m_lastFrame.valid || !m_main.PreviewHwnd()) {
+        return false;
+    }
+    contentSize = { m_lastFrame.contentWidth, m_lastFrame.contentHeight };
+    if (contentSize.width <= 0 || contentSize.height <= 0) {
+        return false;
     }
     RECT rc = ClientRect(m_main.PreviewHwnd());
-    const FloatRect fitted = FitAspect(
+    fitted = FitAspect(
         { static_cast<float>(rc.right - rc.left), static_cast<float>(rc.bottom - rc.top) },
-        { static_cast<float>(m_lastFrame.contentWidth), static_cast<float>(m_lastFrame.contentHeight) });
+        { static_cast<float>(contentSize.width), static_cast<float>(contentSize.height) });
+    return !fitted.empty();
+}
+
+PointF App::ViewportPointToContentClamped(POINT clientPt, const FloatRect& fitted, SizeI contentSize) const
+{
+    const float x = std::clamp(static_cast<float>(clientPt.x), fitted.left, fitted.right);
+    const float y = std::clamp(static_cast<float>(clientPt.y), fitted.top, fitted.bottom);
+    PointF content{};
+    ViewportToContent({ x, y }, fitted, contentSize, content);
+    return ClampToContent(content, contentSize);
+}
+
+SelectionHit App::HitTestAt(POINT clientPt) const
+{
+    FloatRect fitted{};
+    SizeI contentSize{};
+    if (!m_hasSelection || !PreviewGeometry(fitted, contentSize)) {
+        return SelectionHit::None;
+    }
+    return HitTestSelection(
+        { static_cast<float>(clientPt.x), static_cast<float>(clientPt.y) },
+        m_normalizedCrop,
+        fitted,
+        contentSize,
+        10.f);
+}
+
+HCURSOR App::PreviewCursorAt(POINT clientPt) const
+{
+    if (m_selectMode == SelectMode::Selecting) {
+        return LoadCursorW(nullptr, IDC_CROSS);
+    }
+    if (m_editOp == EditOp::Move) {
+        return LoadCursorW(nullptr, IDC_SIZEALL);
+    }
+    if (m_editOp == EditOp::Resize) {
+        switch (m_editHit) {
+        case SelectionHit::Left:
+        case SelectionHit::Right:
+            return LoadCursorW(nullptr, IDC_SIZEWE);
+        case SelectionHit::Top:
+        case SelectionHit::Bottom:
+            return LoadCursorW(nullptr, IDC_SIZENS);
+        case SelectionHit::TopLeft:
+        case SelectionHit::BottomRight:
+            return LoadCursorW(nullptr, IDC_SIZENWSE);
+        case SelectionHit::TopRight:
+        case SelectionHit::BottomLeft:
+            return LoadCursorW(nullptr, IDC_SIZENESW);
+        default:
+            break;
+        }
+    }
+    if (m_hasSelection && m_capture.IsActive()) {
+        switch (HitTestAt(clientPt)) {
+        case SelectionHit::Move:
+            return LoadCursorW(nullptr, IDC_SIZEALL);
+        case SelectionHit::Left:
+        case SelectionHit::Right:
+            return LoadCursorW(nullptr, IDC_SIZEWE);
+        case SelectionHit::Top:
+        case SelectionHit::Bottom:
+            return LoadCursorW(nullptr, IDC_SIZENS);
+        case SelectionHit::TopLeft:
+        case SelectionHit::BottomRight:
+            return LoadCursorW(nullptr, IDC_SIZENWSE);
+        case SelectionHit::TopRight:
+        case SelectionHit::BottomLeft:
+            return LoadCursorW(nullptr, IDC_SIZENESW);
+        default:
+            return LoadCursorW(nullptr, IDC_CROSS);
+        }
+    }
+    return nullptr;
+}
+
+void App::ApplyCropLive(bool finalizePlacement)
+{
+    if (!m_mirroring || !m_hasSelection) {
+        return;
+    }
+    const IntRect crop = CurrentCropPixels();
+    if (crop.empty()) {
+        return;
+    }
+
+    if (finalizePlacement &&
+        m_selectedDisplayIndex >= 0 &&
+        m_selectedDisplayIndex < static_cast<int>(m_displays.size())) {
+        m_mirror.SetMode(m_settings.outputMode, m_displays[m_selectedDisplayIndex], crop.width(), crop.height());
+        if (m_mirror.Hwnd() && m_d3d.IsValid()) {
+            RECT rc = ClientRect(m_mirror.Hwnd());
+            m_mirror.Target().Resize(
+                m_d3d.Device(),
+                std::max(1L, rc.right - rc.left),
+                std::max(1L, rc.bottom - rc.top));
+        }
+    }
+    RenderMirror();
+}
+
+void App::OnPreviewLButtonDown(POINT clientPt)
+{
+    if (!m_capture.IsActive() || !m_lastFrame.valid) {
+        return;
+    }
+
+    FloatRect fitted{};
+    SizeI contentSize{};
+    if (!PreviewGeometry(fitted, contentSize)) {
+        return;
+    }
 
     PointF content{};
-    if (!ViewportToContent({ static_cast<float>(clientPt.x), static_cast<float>(clientPt.y) },
-                           fitted,
-                           { m_lastFrame.contentWidth, m_lastFrame.contentHeight },
-                           content)) {
-        // Ignore drags that begin in letterbox bars.
+    const bool inVideo = ViewportToContent(
+        { static_cast<float>(clientPt.x), static_cast<float>(clientPt.y) },
+        fitted,
+        contentSize,
+        content);
+    if (!inVideo) {
         m_dragStartedInVideo = false;
+        return;
+    }
+
+    // Existing selection: drag to move, edges/corners to resize.
+    if (m_hasSelection && m_selectMode != SelectMode::Selecting) {
+        const SelectionHit hit = HitTestAt(clientPt);
+        if (hit != SelectionHit::None) {
+            m_editOp = (hit == SelectionHit::Move) ? EditOp::Move : EditOp::Resize;
+            m_editHit = hit;
+            m_editStartCrop = m_normalizedCrop;
+            m_editStartContent = content;
+            m_dragActive = true;
+            m_dragStartedInVideo = true;
+            SetFocus(m_main.PreviewHwnd());
+            SetCapture(m_main.PreviewHwnd());
+            UpdateControlState();
+            return;
+        }
+        // Click outside the selection starts a new region.
+        m_selectMode = SelectMode::Selecting;
+        m_autoStartAfterSelect = !m_mirroring;
+    }
+
+    if (m_selectMode != SelectMode::Selecting) {
         return;
     }
 
@@ -974,6 +1138,7 @@ void App::OnPreviewLButtonDown(POINT clientPt)
     m_dragActive = true;
     m_dragStartContent = content;
     m_dragCurrentContent = content;
+    m_draftNormalized = {};
     SetFocus(m_main.PreviewHwnd());
     SetCapture(m_main.PreviewHwnd());
     m_previewNeedsPaint = true;
@@ -985,24 +1150,40 @@ void App::OnPreviewMouseMove(POINT clientPt)
     if (!m_dragActive || !m_dragStartedInVideo || !m_lastFrame.valid) {
         return;
     }
-    RECT rc = ClientRect(m_main.PreviewHwnd());
-    const FloatRect fitted = FitAspect(
-        { static_cast<float>(rc.right - rc.left), static_cast<float>(rc.bottom - rc.top) },
-        { static_cast<float>(m_lastFrame.contentWidth), static_cast<float>(m_lastFrame.contentHeight) });
 
-    PointF content{};
-    // Clamp to video rect when pointer leaves it.
-    const float x = std::clamp(static_cast<float>(clientPt.x), fitted.left, fitted.right);
-    const float y = std::clamp(static_cast<float>(clientPt.y), fitted.top, fitted.bottom);
-    ViewportToContent({ x, y }, fitted, { m_lastFrame.contentWidth, m_lastFrame.contentHeight }, content);
-    m_dragCurrentContent = ClampToContent(content, { m_lastFrame.contentWidth, m_lastFrame.contentHeight });
+    FloatRect fitted{};
+    SizeI contentSize{};
+    if (!PreviewGeometry(fitted, contentSize)) {
+        return;
+    }
+    const PointF content = ViewportPointToContentClamped(clientPt, fitted, contentSize);
 
+    if (m_editOp != EditOp::None) {
+        FloatRect edited{};
+        if (ApplySelectionEdit(m_editHit, m_editStartCrop, m_editStartContent, content, contentSize, edited)) {
+            m_normalizedCrop = edited;
+            const IntRect crop = CurrentCropPixels();
+            std::wstringstream ss;
+            ss << L"Editing region " << crop.width() << L" x " << crop.height() << L" source pixels.";
+            m_status = ss.str();
+            UpdateStatus();
+            ApplyCropLive(false);
+            m_previewNeedsPaint = true;
+            RenderPreview(true);
+        }
+        return;
+    }
+
+    if (m_selectMode != SelectMode::Selecting) {
+        return;
+    }
+
+    m_dragCurrentContent = content;
     FloatRect draft{};
-    if (NormalizeCropFromCorners(m_dragStartContent, m_dragCurrentContent,
-                                 { m_lastFrame.contentWidth, m_lastFrame.contentHeight }, draft)) {
+    if (NormalizeCropFromCorners(m_dragStartContent, m_dragCurrentContent, contentSize, draft)) {
         m_draftNormalized = draft;
         IntRect pixels{};
-        NormalizedToPixelRect(draft, { m_lastFrame.contentWidth, m_lastFrame.contentHeight }, pixels);
+        NormalizedToPixelRect(draft, contentSize, pixels);
         std::wstringstream ss;
         ss << L"Selecting " << pixels.width() << L" x " << pixels.height() << L" source pixels. Esc cancels.";
         m_status = ss.str();
@@ -1017,18 +1198,46 @@ void App::OnPreviewLButtonUp(POINT clientPt)
     if (!m_dragActive) {
         return;
     }
-    ReleaseCapture();
-    m_dragActive = false;
 
-    if (!m_dragStartedInVideo || !m_lastFrame.valid) {
+    // Finish the gesture before ReleaseCapture. WM_CAPTURECHANGED runs synchronously and
+    // must not see an active edit, or it cancels and the create-region path overwrites the crop.
+    const bool wasEdit = m_editOp != EditOp::None;
+    if (wasEdit) {
+        OnPreviewMouseMove(clientPt);
+        m_editOp = EditOp::None;
+        m_editHit = SelectionHit::None;
+        m_dragActive = false;
+        ReleaseCapture();
+
+        ApplyCropLive(true);
+        const IntRect crop = CurrentCropPixels();
+        std::wstringstream ss;
+        ss << L"Region set to " << crop.width() << L" x " << crop.height() << L" source pixels.";
+        m_status = ss.str();
+        UpdateControlState();
+        UpdateStatus();
+        m_previewNeedsPaint = true;
+        RenderTick();
         return;
     }
 
     OnPreviewMouseMove(clientPt);
+    m_dragActive = false;
+    ReleaseCapture();
+
+    if (!m_dragStartedInVideo || !m_lastFrame.valid) {
+        UpdateControlState();
+        return;
+    }
+
+    FloatRect fitted{};
+    SizeI contentSize{};
+    if (!PreviewGeometry(fitted, contentSize)) {
+        return;
+    }
 
     FloatRect normalized{};
-    if (!NormalizeCropFromCorners(m_dragStartContent, m_dragCurrentContent,
-                                  { m_lastFrame.contentWidth, m_lastFrame.contentHeight }, normalized)) {
+    if (!NormalizeCropFromCorners(m_dragStartContent, m_dragCurrentContent, contentSize, normalized)) {
         m_status = L"Selection was empty. Drag again.";
         m_selectMode = SelectMode::Selecting;
         UpdateStatus();
@@ -1045,33 +1254,72 @@ void App::OnPreviewLButtonUp(POINT clientPt)
     m_status = ss.str();
 
     if (m_mirroring) {
-        // Applying a new valid selection updates the running output.
-        if (m_selectedDisplayIndex >= 0 && m_selectedDisplayIndex < static_cast<int>(m_displays.size())) {
-            m_mirror.SetMode(m_settings.outputMode, m_displays[m_selectedDisplayIndex], crop.width(), crop.height());
-        }
+        ApplyCropLive(true);
+        m_autoStartAfterSelect = false;
+        UpdateControlState();
+        UpdateStatus();
+        m_previewNeedsPaint = true;
+        RenderTick();
+        return;
     }
 
     UpdateControlState();
     UpdateStatus();
     m_previewNeedsPaint = true;
     RenderTick();
+
+    if (m_autoStartAfterSelect) {
+        m_autoStartAfterSelect = false;
+        OnStartMirror();
+    }
 }
 
 void App::OnPreviewCaptureLost()
 {
-    if (m_dragActive) {
-        m_dragActive = false;
-        m_status = L"Selection cancelled.";
-        UpdateStatus();
-        m_previewNeedsPaint = true;
+    // Intentional ReleaseCapture clears drag/edit first; this only handles unexpected loss.
+    if (!m_dragActive && m_editOp == EditOp::None) {
+        return;
     }
+
+    if (m_editOp != EditOp::None) {
+        m_normalizedCrop = m_editStartCrop;
+        ApplyCropLive(true);
+    }
+
+    m_dragActive = false;
+    m_editOp = EditOp::None;
+    m_editHit = SelectionHit::None;
+    if (m_selectMode == SelectMode::Selecting && !m_hasSelection) {
+        m_selectMode = SelectMode::Idle;
+    } else if (m_selectMode == SelectMode::Selecting && m_hasSelection) {
+        m_selectMode = SelectMode::Idle;
+    }
+    m_status = L"Selection edit cancelled.";
+    UpdateControlState();
+    UpdateStatus();
+    m_previewNeedsPaint = true;
 }
 
 bool App::OnPreviewKeyEscape()
 {
+    if (m_editOp != EditOp::None) {
+        m_normalizedCrop = m_editStartCrop;
+        m_editOp = EditOp::None;
+        m_editHit = SelectionHit::None;
+        m_dragActive = false;
+        ReleaseCapture();
+        ApplyCropLive(true);
+        m_status = L"Region edit cancelled.";
+        UpdateControlState();
+        UpdateStatus();
+        m_previewNeedsPaint = true;
+        RenderPreview(true);
+        return true;
+    }
     if (m_selectMode == SelectMode::Selecting) {
         m_dragActive = false;
         m_selectMode = SelectMode::Idle;
+        m_autoStartAfterSelect = false;
         ReleaseCapture();
         m_status = m_hasSelection ? L"Selection cancelled. Previous region kept." : L"Selection cancelled.";
         UpdateControlState();

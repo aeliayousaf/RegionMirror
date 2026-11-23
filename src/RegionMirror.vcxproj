@@ -102,6 +102,7 @@
     <ClInclude Include="render\GpuRenderer.h" />
     <ClInclude Include="ui\MainWindow.h" />
     <ClInclude Include="ui\MirrorWindow.h" />
+    <ClInclude Include="ui\SettingsWindow.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="util\AppIcon.h" />
     <ClInclude Include="util\Diagnostics.h" />
@@ -120,6 +121,7 @@
     <ClCompile Include="render\GpuRenderer.cpp" />
     <ClCompile Include="ui\MainWindow.cpp" />
     <ClCompile Include="ui\MirrorWindow.cpp" />
+    <ClCompile Include="ui\SettingsWindow.cpp" />
     <ClCompile Include="util\AppIcon.cpp" />
     <ClCompile Include="util\Diagnostics.cpp" />
     <ClCompile Include="util\DisplayEnum.cpp" />

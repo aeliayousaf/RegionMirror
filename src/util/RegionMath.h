@@ -50,8 +50,45 @@ FloatRect FitAspect(SizeF viewport, SizeF content);
 // Returns false if the point is outside the fitted video rectangle (letterbox/pillarbox).
 bool ViewportToContent(PointF viewportPoint, FloatRect fitted, SizeI contentSize, PointF& outContent);
 
+// Map content pixel space into viewport client space using the fitted video rect.
+PointF ContentToViewport(PointF contentPoint, FloatRect fitted, SizeI contentSize);
+
+// Map a normalized content crop into a viewport rectangle.
+FloatRect NormalizedToViewportRect(FloatRect normalized, FloatRect fitted, SizeI contentSize);
+
 // Clamp a content-space point into [0, contentSize].
 PointF ClampToContent(PointF p, SizeI contentSize);
+
+enum class SelectionHit {
+    None = 0,
+    Move,
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+};
+
+// Hit-test a selection rectangle in viewport space. handlePx is the grab thickness.
+SelectionHit HitTestSelection(
+    PointF viewportPoint,
+    FloatRect normalizedSelection,
+    FloatRect fitted,
+    SizeI contentSize,
+    float handlePx);
+
+// Apply a move/resize edit. startCrop/startContent are from mouse-down; currentContent is now.
+// Returns false if the result would be empty.
+bool ApplySelectionEdit(
+    SelectionHit hit,
+    FloatRect startCrop,
+    PointF startContent,
+    PointF currentContent,
+    SizeI contentSize,
+    FloatRect& outNormalized);
 
 // Build a normalized crop (0..1 relative to content) from two content-space corners.
 // Handles reverse-direction drags. Returns false if the resulting rect is empty after clamping.

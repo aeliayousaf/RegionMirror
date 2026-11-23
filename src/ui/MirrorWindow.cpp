@@ -119,10 +119,17 @@ bool MirrorWindow::ShowOnDisplay(const DisplayInfo& display, OutputMode mode, in
     }
     ApplyPlacement(display, mode, cropW, cropH);
     SetOpacityPercent(m_opacityPercent);
+    SetAlwaysOnTop(m_alwaysOnTop);
     // Avoid stealing focus where practical.
     ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
-    SetWindowPos(m_hwnd, HWND_TOP, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetWindowPos(
+        m_hwnd,
+        m_alwaysOnTop ? HWND_TOPMOST : HWND_TOP,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     m_visible = true;
     return true;
 }
@@ -138,6 +145,22 @@ void MirrorWindow::Hide()
 void MirrorWindow::SetMode(OutputMode mode, const DisplayInfo& display, int cropW, int cropH)
 {
     ApplyPlacement(display, mode, cropW, cropH);
+}
+
+void MirrorWindow::SetAlwaysOnTop(bool enabled)
+{
+    m_alwaysOnTop = enabled;
+    if (!m_hwnd) {
+        return;
+    }
+    SetWindowPos(
+        m_hwnd,
+        enabled ? HWND_TOPMOST : HWND_NOTOPMOST,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
 void MirrorWindow::SetOpacityPercent(int percent)
@@ -172,13 +195,18 @@ void MirrorWindow::ApplyPlacement(const DisplayInfo& display, OutputMode mode, i
         return;
     }
 
-    // Borderless popup. Windowed mode still supports drag/resize via WM_NCHITTEST.
-    SetWindowLongPtrW(m_hwnd, GWL_STYLE, WS_POPUP);
+    // Borderless popup. Keep WS_VISIBLE if we are already showing — clearing it hides the window.
+    LONG_PTR style = WS_POPUP;
+    if (m_visible || IsWindowVisible(m_hwnd)) {
+        style |= WS_VISIBLE;
+    }
+    SetWindowLongPtrW(m_hwnd, GWL_STYLE, style);
 
     if (mode == OutputMode::Fullscreen) {
+        const HWND insertAfter = m_alwaysOnTop ? HWND_TOPMOST : HWND_TOP;
         SetWindowPos(
             m_hwnd,
-            HWND_TOP,
+            insertAfter,
             display.bounds.left,
             display.bounds.top,
             display.bounds.right - display.bounds.left,
@@ -201,12 +229,27 @@ void MirrorWindow::ApplyPlacement(const DisplayInfo& display, OutputMode mode, i
         winW = std::max(320, std::min(winW, workW - 40));
         winH = std::max(240, std::min(winH, workH - 40));
 
-        const int x = display.workArea.left + (workW - winW) / 2;
-        const int y = display.workArea.top + (workH - winH) / 2;
+        int x = display.workArea.left + (workW - winW) / 2;
+        int y = display.workArea.top + (workH - winH) / 2;
+        // When already visible (live crop edit), keep the current center instead of jumping.
+        if (m_visible) {
+            RECT rc{};
+            if (GetWindowRect(m_hwnd, &rc)) {
+                const int cx = (rc.left + rc.right) / 2;
+                const int cy = (rc.top + rc.bottom) / 2;
+                x = cx - winW / 2;
+                y = cy - winH / 2;
+                x = std::clamp(x, static_cast<int>(display.workArea.left),
+                               static_cast<int>(display.workArea.right) - winW);
+                y = std::clamp(y, static_cast<int>(display.workArea.top),
+                               static_cast<int>(display.workArea.bottom) - winH);
+            }
+        }
 
+        const HWND insertAfter = m_alwaysOnTop ? HWND_TOPMOST : HWND_TOP;
         SetWindowPos(
             m_hwnd,
-            HWND_TOP,
+            insertAfter,
             x,
             y,
             winW,

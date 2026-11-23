@@ -1,10 +1,7 @@
 #pragma once
 
-#include "../util/Settings.h"
 #include <windows.h>
 #include <string>
-#include <vector>
-#include <functional>
 
 namespace rm {
 
@@ -12,24 +9,11 @@ class App;
 
 struct MainWindowWidgets {
     HWND chooseSource = nullptr;
-    HWND changeSource = nullptr;
-    HWND selectRegion = nullptr;
-    HWND editRegion = nullptr;
-    HWND startMirror = nullptr;
     HWND stopMirror = nullptr;
-    HWND monitorCombo = nullptr;
-    HWND modeWindowed = nullptr;
-    HWND modeFullscreen = nullptr;
-    HWND modeWindowedLabel = nullptr;
-    HWND modeFullscreenLabel = nullptr;
-    HWND opacityLabel = nullptr;
-    HWND opacitySlider = nullptr;
-    HWND opacityValue = nullptr;
+    HWND settings = nullptr;
     HWND status = nullptr;
     HWND debug = nullptr;
-    HWND retry = nullptr;
     HWND preview = nullptr;
-    HWND toggleDebug = nullptr;
 };
 
 class MainWindow {
@@ -46,25 +30,11 @@ public:
 
     void SetStatusText(const std::wstring& text);
     void SetDebugText(const std::wstring& text);
-    void SetMonitorList(const std::vector<std::wstring>& labels, int selectedIndex);
-    void SetOutputMode(OutputMode mode);
-    void SetOpacityPercent(int percent);
-    int GetOpacityPercent() const;
-    void SetControlsEnabled(
-        bool chooseSource,
-        bool changeSource,
-        bool selectRegion,
-        bool editRegion,
-        bool startMirror,
-        bool stopMirror,
-        bool monitors,
-        bool modes,
-        bool retry);
+    void SetSourceButtonLabel(const std::wstring& text);
+    void SetControlsEnabled(bool chooseSource, bool stopMirror, bool settings);
     void ShowDebug(bool show);
 
     void ExcludeFromCapture(bool exclude);
-
-    int GetSelectedMonitorIndex() const;
 
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -73,7 +43,6 @@ private:
     void CreateChildren();
     void Layout();
     void ApplyDarkTheme();
-    HFONT UiFont() const { return m_font; }
 
     App& m_app;
     HINSTANCE m_instance = nullptr;

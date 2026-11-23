@@ -5,6 +5,7 @@
 #include "render/GpuRenderer.h"
 #include "ui/MainWindow.h"
 #include "ui/MirrorWindow.h"
+#include "ui/SettingsWindow.h"
 #include "util/Diagnostics.h"
 #include "util/DisplayEnum.h"
 #include "util/RegionMath.h"
@@ -23,17 +24,15 @@ public:
 
     int Run();
 
-    // Invoked by MainWindow / preview subclass.
     void OnChooseSource();
     void OnChangeSource();
-    void OnSelectRegion();
-    void OnEditRegion();
-    void OnStartMirror();
     void OnStopMirror();
+    void OnOpenSettings();
     void OnOutputMonitorChanged(int index);
     void OnOutputModeChanged(OutputMode mode);
     void OnOpacityChanged(int percent);
-    void OnToggleDebug();
+    void OnAlwaysOnTopChanged(bool enabled);
+    void OnShowDebugChanged(bool show);
     void OnRetryGraphics();
     void OnCaptureClosed();
     void OnMirrorClosed();
@@ -50,6 +49,7 @@ public:
     void OnPreviewCaptureLost();
     bool OnPreviewKeyEscape();
     bool IsSelectingRegion() const { return m_selectMode == SelectMode::Selecting; }
+    HCURSOR PreviewCursorAt(POINT clientPt) const;
 
     static constexpr UINT WM_APP_FRAME = WM_APP + 1;
     static constexpr UINT WM_APP_SOURCE_CLOSED = WM_APP + 2;
@@ -63,6 +63,8 @@ private:
 
     void OnCaptureFrameSignal();
     void OnEscapeFullscreen();
+    void OnSelectRegion();
+    void OnStartMirror();
 
     void RenderPreview(bool force);
     void RenderMirror();
@@ -80,10 +82,15 @@ private:
     bool HasValidSelection() const;
     IntRect CurrentCropPixels() const;
     FloatRect EffectiveCrop() const;
+    bool PreviewGeometry(FloatRect& fitted, SizeI& contentSize) const;
+    PointF ViewportPointToContentClamped(POINT clientPt, const FloatRect& fitted, SizeI contentSize) const;
+    void ApplyCropLive(bool finalizePlacement);
+    SelectionHit HitTestAt(POINT clientPt) const;
 
     HINSTANCE m_instance = nullptr;
     MainWindow m_main;
     MirrorWindow m_mirror;
+    SettingsWindow m_settingsUi;
     winrt::Windows::System::DispatcherQueueController m_dispatcherController{ nullptr };
 
     D3DDevice m_d3d;
@@ -106,7 +113,7 @@ private:
     FloatRect m_normalizedCrop{ 0.f, 0.f, 1.f, 1.f };
     bool m_hasSelection = false;
 
-    enum class SelectMode { Idle, Selecting, EditingReady };
+    enum class SelectMode { Idle, Selecting };
     SelectMode m_selectMode = SelectMode::Idle;
     bool m_dragActive = false;
     bool m_dragStartedInVideo = false;
@@ -114,10 +121,17 @@ private:
     PointF m_dragCurrentContent{};
     FloatRect m_draftNormalized{};
 
+    enum class EditOp { None, Move, Resize };
+    EditOp m_editOp = EditOp::None;
+    SelectionHit m_editHit = SelectionHit::None;
+    FloatRect m_editStartCrop{};
+    PointF m_editStartContent{};
+
     bool m_mirroring = false;
     bool m_sourceClosed = false;
     bool m_deviceRecoveryAttempted = false;
     bool m_captureSupported = false;
+    bool m_autoStartAfterSelect = false;
 
     CapturedFrame m_lastFrame{};
     SizeI m_lastContentSize{};

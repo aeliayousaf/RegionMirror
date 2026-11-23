@@ -71,13 +71,27 @@ float4 PSMain(VSOut i) : SV_Target
         }
         else
         {
-            // Border in content UV space (~2px feel via derivative-ish constant thickness).
+            // Border + corner/edge handles for drag-resize affordance.
             float2 d = fwidth(contentUV);
             float2 edge = max(d * 1.5, float2(0.0015, 0.0015));
+            float2 handle = max(d * 7.0, float2(0.007, 0.007));
             bool onBorder =
                 contentUV.x < selMin.x + edge.x || contentUV.x > selMax.x - edge.x ||
                 contentUV.y < selMin.y + edge.y || contentUV.y > selMax.y - edge.y;
-            if (onBorder)
+
+            float midY = (selMin.y + selMax.y) * 0.5;
+            float midX = (selMin.x + selMax.x) * 0.5;
+            bool onHandle =
+                (contentUV.x < selMin.x + handle.x && contentUV.y < selMin.y + handle.y) ||
+                (contentUV.x > selMax.x - handle.x && contentUV.y < selMin.y + handle.y) ||
+                (contentUV.x < selMin.x + handle.x && contentUV.y > selMax.y - handle.y) ||
+                (contentUV.x > selMax.x - handle.x && contentUV.y > selMax.y - handle.y) ||
+                (contentUV.x < selMin.x + handle.x && abs(contentUV.y - midY) < handle.y) ||
+                (contentUV.x > selMax.x - handle.x && abs(contentUV.y - midY) < handle.y) ||
+                (contentUV.y < selMin.y + handle.y && abs(contentUV.x - midX) < handle.x) ||
+                (contentUV.y > selMax.y - handle.y && abs(contentUV.x - midX) < handle.x);
+
+            if (onHandle || onBorder)
             {
                 color = borderColor;
             }
