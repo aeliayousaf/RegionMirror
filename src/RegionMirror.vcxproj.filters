@@ -43,8 +43,19 @@
     <ClInclude Include="util\DisplayEnum.h"><Filter>Util</Filter></ClInclude>
     <ClInclude Include="util\RegionMath.h"><Filter>Util</Filter></ClInclude>
     <ClInclude Include="util\Settings.h"><Filter>Util</Filter></ClInclude>
+    <ClInclude Include="util\AppIcon.h"><Filter>Util</Filter></ClInclude>
+    <ClInclude Include="resource.h"><Filter>Source</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="util\AppIcon.cpp"><Filter>Util</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="RegionMirror.rc"><Filter>Source</Filter></ResourceCompile>
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest"><Filter>Source</Filter></Manifest>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\assets\RegionMirror.ico"><Filter>Source</Filter></None>
   </ItemGroup>
 </Project>

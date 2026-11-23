@@ -45,6 +45,9 @@ private:
     SwapChainTarget m_target;
     ClosedCallback m_onClosed;
     std::function<void()> m_onEscape;
+    HICON m_iconLarge = nullptr;
+    HICON m_iconSmall = nullptr;
+    bool m_iconsOwned = false;
 };
 
 } // namespace rm

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "MainWindow.h"
 #include "../App.h"
+#include "../util/AppIcon.h"
 
 #include <CommCtrl.h>
 #include <dwmapi.h>
@@ -65,13 +66,23 @@ bool MainWindow::Create(HINSTANCE instance)
     INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES };
     InitCommonControlsEx(&icc);
 
+    if (LoadAppIcons(instance, &m_iconLarge, &m_iconSmall)) {
+        m_iconsOwned = true;
+    } else {
+        // Keep going with the default application icon if the resource is missing.
+        m_iconLarge = LoadIconW(nullptr, IDI_APPLICATION);
+        m_iconSmall = m_iconLarge;
+        m_iconsOwned = false;
+    }
+
     if (!m_classRegistered) {
         WNDCLASSEXW wc{ sizeof(wc) };
         wc.style = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc = MainWindow::WndProc;
         wc.hInstance = instance;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        wc.hIcon = m_iconLarge ? m_iconLarge : LoadIconW(nullptr, IDI_APPLICATION);
+        wc.hIconSm = m_iconSmall ? m_iconSmall : wc.hIcon;
         wc.hbrBackground = CreateSolidBrush(RGB(28, 30, 34));
         wc.lpszClassName = kMainClass;
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
@@ -109,6 +120,7 @@ bool MainWindow::Create(HINSTANCE instance)
         return false;
     }
 
+    ApplyWindowIcons(m_hwnd, m_iconLarge, m_iconSmall);
     CreateChildren();
     ApplyDarkTheme();
     ExcludeFromCapture(true);
@@ -128,6 +140,17 @@ void MainWindow::Destroy()
         DeleteObject(m_font);
         m_font = nullptr;
     }
+    if (m_iconsOwned) {
+        if (m_iconLarge) {
+            DestroyIcon(m_iconLarge);
+        }
+        if (m_iconSmall && m_iconSmall != m_iconLarge) {
+            DestroyIcon(m_iconSmall);
+        }
+    }
+    m_iconLarge = nullptr;
+    m_iconSmall = nullptr;
+    m_iconsOwned = false;
     // brush owned by class; leave it
 }
 

@@ -74,6 +74,9 @@ private:
     MainWindowWidgets m_widgets{};
     HFONT m_font = nullptr;
     HBRUSH m_bgBrush = nullptr;
+    HICON m_iconLarge = nullptr;
+    HICON m_iconSmall = nullptr;
+    bool m_iconsOwned = false;
     bool m_classRegistered = false;
     bool m_showDebug = false;
 };

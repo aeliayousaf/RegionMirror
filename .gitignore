@@ -25,6 +25,7 @@ smoke_capture*
 *.idb
 *.iobj
 *.ipdb
+assets/_preview/
 
 *.pch
 *.ipdb

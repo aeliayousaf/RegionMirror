@@ -1,0 +1,5 @@
+#include <windows.h>
+#include "resource.h"
+
+// Primary application icon (first ICON resource = File Explorer default).
+IDI_REGION_MIRROR ICON "..\\assets\\RegionMirror.ico"

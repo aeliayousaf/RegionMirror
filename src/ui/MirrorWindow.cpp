@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MirrorWindow.h"
+#include "../util/AppIcon.h"
 
 #include <algorithm>
 
@@ -29,12 +30,22 @@ MirrorWindow::~MirrorWindow()
 bool MirrorWindow::Create(HINSTANCE instance)
 {
     m_instance = instance;
+    if (LoadAppIcons(instance, &m_iconLarge, &m_iconSmall)) {
+        m_iconsOwned = true;
+    } else {
+        m_iconLarge = LoadIconW(nullptr, IDI_APPLICATION);
+        m_iconSmall = m_iconLarge;
+        m_iconsOwned = false;
+    }
+
     if (!m_classRegistered) {
         WNDCLASSEXW wc{ sizeof(wc) };
         wc.style = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc = MirrorWindow::WndProc;
         wc.hInstance = instance;
         wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hIcon = m_iconLarge ? m_iconLarge : LoadIconW(nullptr, IDI_APPLICATION);
+        wc.hIconSm = m_iconSmall ? m_iconSmall : wc.hIcon;
         wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
         wc.lpszClassName = kMirrorClass;
         if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
@@ -45,6 +56,8 @@ bool MirrorWindow::Create(HINSTANCE instance)
 
     // Owner is set later via SetWindowLongPtr if needed. Avoid WS_EX_NOREDIRECTIONBITMAP
     // unless using DirectComposition; classic HWND swap chains present more reliably without it.
+    // WS_EX_TOOLWINDOW keeps the output out of the taskbar / Alt+Tab by default; icons still
+    // apply to the title bar when the windowed chrome is visible.
     m_hwnd = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         kMirrorClass,
@@ -63,6 +76,7 @@ bool MirrorWindow::Create(HINSTANCE instance)
         return false;
     }
 
+    ApplyWindowIcons(m_hwnd, m_iconLarge, m_iconSmall);
     ExcludeFromCapture(true);
     // Ensure the output window never appears until Start mirror.
     SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
@@ -78,6 +92,17 @@ void MirrorWindow::Destroy()
         m_hwnd = nullptr;
     }
     m_visible = false;
+    if (m_iconsOwned) {
+        if (m_iconLarge) {
+            DestroyIcon(m_iconLarge);
+        }
+        if (m_iconSmall && m_iconSmall != m_iconLarge) {
+            DestroyIcon(m_iconSmall);
+        }
+    }
+    m_iconLarge = nullptr;
+    m_iconSmall = nullptr;
+    m_iconsOwned = false;
 }
 
 void MirrorWindow::ExcludeFromCapture(bool exclude)
