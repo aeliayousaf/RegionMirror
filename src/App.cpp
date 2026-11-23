@@ -873,7 +873,7 @@ void App::UpdateStatus()
         } else {
             d << L"n/a";
         }
-        d << L" — not end-to-end latency";
+        d << L" - not end-to-end latency";
         if (!snap.note.empty()) {
             d << L" | " << snap.note;
         }

@@ -20,6 +20,8 @@ struct MainWindowWidgets {
     HWND monitorCombo = nullptr;
     HWND modeWindowed = nullptr;
     HWND modeFullscreen = nullptr;
+    HWND modeWindowedLabel = nullptr;
+    HWND modeFullscreenLabel = nullptr;
     HWND status = nullptr;
     HWND debug = nullptr;
     HWND retry = nullptr;

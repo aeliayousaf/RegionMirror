@@ -32,6 +32,8 @@ enum ControlId : int {
     IdPreview = 1012,
     IdStatus = 1013,
     IdDebug = 1014,
+    IdModeWindowedLabel = 1015,
+    IdModeFullscreenLabel = 1016,
 };
 
 void SetExcludeFromCapture(HWND hwnd, bool exclude)
@@ -206,16 +208,25 @@ void MainWindow::CreateChildren()
         0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdMonitorCombo)), m_instance, nullptr);
     SendMessageW(m_widgets.monitorCombo, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
 
+    // Radio circles only; labels are STATIC so light-grey text is reliable under dark UI.
     m_widgets.modeWindowed = CreateWindowExW(
-        0, L"BUTTON", L"Windowed",
+        0, L"BUTTON", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
         0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdModeWindowed)), m_instance, nullptr);
+    m_widgets.modeWindowedLabel = CreateWindowExW(
+        0, L"STATIC", L"Windowed",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOTIFY,
+        0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdModeWindowedLabel)), m_instance, nullptr);
     m_widgets.modeFullscreen = CreateWindowExW(
-        0, L"BUTTON", L"Fullscreen",
+        0, L"BUTTON", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
         0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdModeFullscreen)), m_instance, nullptr);
-    SendMessageW(m_widgets.modeWindowed, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
-    SendMessageW(m_widgets.modeFullscreen, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+    m_widgets.modeFullscreenLabel = CreateWindowExW(
+        0, L"STATIC", L"Fullscreen",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOTIFY,
+        0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdModeFullscreenLabel)), m_instance, nullptr);
+    SendMessageW(m_widgets.modeWindowedLabel, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+    SendMessageW(m_widgets.modeFullscreenLabel, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
     SendMessageW(m_widgets.modeWindowed, BM_SETCHECK, BST_CHECKED, 0);
 
     m_widgets.startMirror = makeButton(IdStartMirror, L"Start mirror");
@@ -282,8 +293,16 @@ void MainWindow::Layout()
 
     y += btnH + gap;
     x = margin;
-    place(m_widgets.modeWindowed, 110);
-    place(m_widgets.modeFullscreen, 120);
+    const int radioSize = 22;
+    const int labelW = 88;
+    SetWindowPos(m_widgets.modeWindowed, nullptr, x, y + 5, radioSize, radioSize, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += radioSize + 4;
+    SetWindowPos(m_widgets.modeWindowedLabel, nullptr, x, y + 6, labelW, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += labelW + gap;
+    SetWindowPos(m_widgets.modeFullscreen, nullptr, x, y + 5, radioSize, radioSize, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += radioSize + 4;
+    SetWindowPos(m_widgets.modeFullscreenLabel, nullptr, x, y + 6, labelW, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += labelW + gap;
     place(m_widgets.startMirror, btnW);
     place(m_widgets.stopMirror, btnW);
     place(m_widgets.retry, 140);
@@ -306,10 +325,19 @@ void MainWindow::ApplyDarkTheme()
 {
     EnableDarkTitleBar(m_hwnd);
     // Prefer dark explorer theme for common controls where available.
-    EnumChildWindows(m_hwnd, [](HWND child, LPARAM) -> BOOL {
+    EnumChildWindows(m_hwnd, [](HWND child, LPARAM selfPtr) -> BOOL {
+        auto* self = reinterpret_cast<MainWindow*>(selfPtr);
+        // Keep mode labels unthemed so WM_CTLCOLORSTATIC light-grey text sticks.
+        if (child == self->m_widgets.modeWindowedLabel ||
+            child == self->m_widgets.modeFullscreenLabel ||
+            child == self->m_widgets.modeWindowed ||
+            child == self->m_widgets.modeFullscreen) {
+            SetWindowTheme(child, L"", L"");
+            return TRUE;
+        }
         SetWindowTheme(child, L"DarkMode_Explorer", nullptr);
         return TRUE;
-    }, 0);
+    }, reinterpret_cast<LPARAM>(this));
 }
 
 void MainWindow::SetStatusText(const std::wstring& text)
@@ -367,6 +395,8 @@ void MainWindow::SetControlsEnabled(
     EnableWindow(m_widgets.monitorCombo, monitors ? TRUE : FALSE);
     EnableWindow(m_widgets.modeWindowed, modes ? TRUE : FALSE);
     EnableWindow(m_widgets.modeFullscreen, modes ? TRUE : FALSE);
+    EnableWindow(m_widgets.modeWindowedLabel, modes ? TRUE : FALSE);
+    EnableWindow(m_widgets.modeFullscreenLabel, modes ? TRUE : FALSE);
     EnableWindow(m_widgets.retry, retry ? TRUE : FALSE);
 }
 
@@ -420,9 +450,15 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
                 }
                 break;
             case IdModeWindowed:
+            case IdModeWindowedLabel:
+                SendMessageW(m_widgets.modeWindowed, BM_SETCHECK, BST_CHECKED, 0);
+                SendMessageW(m_widgets.modeFullscreen, BM_SETCHECK, BST_UNCHECKED, 0);
                 m_app.OnOutputModeChanged(OutputMode::Windowed);
                 break;
             case IdModeFullscreen:
+            case IdModeFullscreenLabel:
+                SendMessageW(m_widgets.modeFullscreen, BM_SETCHECK, BST_CHECKED, 0);
+                SendMessageW(m_widgets.modeWindowed, BM_SETCHECK, BST_UNCHECKED, 0);
                 m_app.OnOutputModeChanged(OutputMode::Fullscreen);
                 break;
             default:
@@ -451,8 +487,14 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLORBTN: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
-        SetTextColor(hdc, RGB(235, 238, 245));
+        HWND control = reinterpret_cast<HWND>(lParam);
+        if (control == m_widgets.modeWindowedLabel || control == m_widgets.modeFullscreenLabel) {
+            SetTextColor(hdc, RGB(196, 200, 208)); // light grey
+        } else {
+            SetTextColor(hdc, RGB(235, 238, 245));
+        }
         SetBkColor(hdc, RGB(28, 30, 34));
+        SetBkMode(hdc, OPAQUE);
         return reinterpret_cast<LRESULT>(m_bgBrush ? m_bgBrush : GetStockObject(DKGRAY_BRUSH));
     }
     case App::WM_APP_FRAME:

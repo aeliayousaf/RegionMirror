@@ -95,7 +95,7 @@ std::wstring DisplayInfo::label() const
     const int h = bounds.bottom - bounds.top;
     std::wstring name = friendlyName.empty() ? deviceName : friendlyName;
     wchar_t buf[512];
-    swprintf_s(buf, L"%s — %dx%d @ (%d,%d)%s",
+    swprintf_s(buf, L"%s - %dx%d @ (%d,%d)%s",
                name.c_str(), w, h, bounds.left, bounds.top,
                primary ? L" [Primary]" : L"");
     return buf;
