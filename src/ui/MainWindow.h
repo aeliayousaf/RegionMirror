@@ -22,6 +22,9 @@ struct MainWindowWidgets {
     HWND modeFullscreen = nullptr;
     HWND modeWindowedLabel = nullptr;
     HWND modeFullscreenLabel = nullptr;
+    HWND opacityLabel = nullptr;
+    HWND opacitySlider = nullptr;
+    HWND opacityValue = nullptr;
     HWND status = nullptr;
     HWND debug = nullptr;
     HWND retry = nullptr;
@@ -45,6 +48,8 @@ public:
     void SetDebugText(const std::wstring& text);
     void SetMonitorList(const std::vector<std::wstring>& labels, int selectedIndex);
     void SetOutputMode(OutputMode mode);
+    void SetOpacityPercent(int percent);
+    int GetOpacityPercent() const;
     void SetControlsEnabled(
         bool chooseSource,
         bool changeSource,

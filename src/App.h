@@ -32,10 +32,12 @@ public:
     void OnStopMirror();
     void OnOutputMonitorChanged(int index);
     void OnOutputModeChanged(OutputMode mode);
+    void OnOpacityChanged(int percent);
     void OnToggleDebug();
     void OnRetryGraphics();
     void OnCaptureClosed();
     void OnMirrorClosed();
+    void OnMirrorResized();
     void OnDisplayChange();
     void OnDpiChanged();
     void RenderTick();

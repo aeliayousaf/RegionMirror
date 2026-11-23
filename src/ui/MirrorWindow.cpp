@@ -2,6 +2,7 @@
 #include "MirrorWindow.h"
 #include "../util/AppIcon.h"
 
+#include <windowsx.h>
 #include <algorithm>
 
 namespace rm {
@@ -54,15 +55,13 @@ bool MirrorWindow::Create(HINSTANCE instance)
         m_classRegistered = true;
     }
 
-    // Owner is set later via SetWindowLongPtr if needed. Avoid WS_EX_NOREDIRECTIONBITMAP
-    // unless using DirectComposition; classic HWND swap chains present more reliably without it.
-    // WS_EX_TOOLWINDOW keeps the output out of the taskbar / Alt+Tab by default; icons still
-    // apply to the title bar when the windowed chrome is visible.
+    // Borderless popup: no title bar / caption / close button. Stop via the main window.
+    // WS_EX_TOOLWINDOW keeps the output out of the taskbar / Alt+Tab by default.
     m_hwnd = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         kMirrorClass,
         L"Region Mirror Output",
-        WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX,
+        WS_POPUP,
         0,
         0,
         640,
@@ -78,6 +77,7 @@ bool MirrorWindow::Create(HINSTANCE instance)
 
     ApplyWindowIcons(m_hwnd, m_iconLarge, m_iconSmall);
     ExcludeFromCapture(true);
+    SetOpacityPercent(m_opacityPercent);
     // Ensure the output window never appears until Start mirror.
     SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
                  SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -118,6 +118,7 @@ bool MirrorWindow::ShowOnDisplay(const DisplayInfo& display, OutputMode mode, in
         return false;
     }
     ApplyPlacement(display, mode, cropW, cropH);
+    SetOpacityPercent(m_opacityPercent);
     // Avoid stealing focus where practical.
     ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
     SetWindowPos(m_hwnd, HWND_TOP, 0, 0, 0, 0,
@@ -139,6 +140,31 @@ void MirrorWindow::SetMode(OutputMode mode, const DisplayInfo& display, int crop
     ApplyPlacement(display, mode, cropW, cropH);
 }
 
+void MirrorWindow::SetOpacityPercent(int percent)
+{
+    if (percent < 10) {
+        percent = 10;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    m_opacityPercent = percent;
+    if (!m_hwnd) {
+        return;
+    }
+
+    // Constant per-window alpha works with HWND swap chains via layered style.
+    LONG_PTR ex = GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE);
+    if ((ex & WS_EX_LAYERED) == 0) {
+        SetWindowLongPtrW(m_hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+        SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+
+    const BYTE alpha = static_cast<BYTE>((percent * 255 + 50) / 100);
+    SetLayeredWindowAttributes(m_hwnd, 0, alpha, LWA_ALPHA);
+}
+
 void MirrorWindow::ApplyPlacement(const DisplayInfo& display, OutputMode mode, int cropW, int cropH)
 {
     m_mode = mode;
@@ -146,9 +172,10 @@ void MirrorWindow::ApplyPlacement(const DisplayInfo& display, OutputMode mode, i
         return;
     }
 
+    // Borderless popup. Windowed mode still supports drag/resize via WM_NCHITTEST.
+    SetWindowLongPtrW(m_hwnd, GWL_STYLE, WS_POPUP);
+
     if (mode == OutputMode::Fullscreen) {
-        const LONG_PTR style = WS_POPUP;
-        SetWindowLongPtrW(m_hwnd, GWL_STYLE, style);
         SetWindowPos(
             m_hwnd,
             HWND_TOP,
@@ -158,9 +185,6 @@ void MirrorWindow::ApplyPlacement(const DisplayInfo& display, OutputMode mode, i
             display.bounds.bottom - display.bounds.top,
             SWP_FRAMECHANGED | SWP_NOACTIVATE);
     } else {
-        const LONG_PTR style = WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX;
-        SetWindowLongPtrW(m_hwnd, GWL_STYLE, style);
-
         const int workW = display.workArea.right - display.workArea.left;
         const int workH = display.workArea.bottom - display.workArea.top;
 
@@ -191,6 +215,63 @@ void MirrorWindow::ApplyPlacement(const DisplayInfo& display, OutputMode mode, i
     }
 }
 
+int MirrorWindow::ResizeBorderPx() const
+{
+    UINT dpi = 96;
+    if (m_hwnd) {
+        dpi = GetDpiForWindow(m_hwnd);
+    }
+    // ~8px at 96 DPI — wide enough to grab without a visible frame.
+    return std::max(6, MulDiv(8, static_cast<int>(dpi), 96));
+}
+
+LRESULT MirrorWindow::HitTestBorderless(LPARAM lParam) const
+{
+    if (!m_hwnd || m_mode == OutputMode::Fullscreen) {
+        return HTCLIENT;
+    }
+
+    POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+    RECT rc{};
+    GetClientRect(m_hwnd, &rc);
+    POINT client = pt;
+    ScreenToClient(m_hwnd, &client);
+
+    const int border = ResizeBorderPx();
+    const bool onLeft = client.x < border;
+    const bool onRight = client.x >= (rc.right - border);
+    const bool onTop = client.y < border;
+    const bool onBottom = client.y >= (rc.bottom - border);
+
+    if (onTop && onLeft) {
+        return HTTOPLEFT;
+    }
+    if (onTop && onRight) {
+        return HTTOPRIGHT;
+    }
+    if (onBottom && onLeft) {
+        return HTBOTTOMLEFT;
+    }
+    if (onBottom && onRight) {
+        return HTBOTTOMRIGHT;
+    }
+    if (onLeft) {
+        return HTLEFT;
+    }
+    if (onRight) {
+        return HTRIGHT;
+    }
+    if (onTop) {
+        return HTTOP;
+    }
+    if (onBottom) {
+        return HTBOTTOM;
+    }
+
+    // Drag by clicking anywhere in the content area.
+    return HTCAPTION;
+}
+
 LRESULT CALLBACK MirrorWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     MirrorWindow* self = nullptr;
@@ -211,6 +292,30 @@ LRESULT CALLBACK MirrorWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 LRESULT MirrorWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
+    case WM_NCHITTEST:
+        return HitTestBorderless(lParam);
+    case WM_GETMINMAXINFO: {
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+        const int border = ResizeBorderPx() * 2;
+        mmi->ptMinTrackSize.x = 320 + border;
+        mmi->ptMinTrackSize.y = 180 + border;
+        return 0;
+    }
+    case WM_NCLBUTTONDBLCLK:
+        // Borderless content uses HTCAPTION for drag; block caption double-click maximize.
+        return 0;
+    case WM_SYSCOMMAND: {
+        const WPARAM cmd = wParam & 0xFFF0;
+        if (cmd == SC_MAXIMIZE || cmd == SC_MINIMIZE) {
+            return 0;
+        }
+        break;
+    }
+    case WM_SIZE:
+        if (m_onResize && m_visible) {
+            m_onResize();
+        }
+        return 0;
     case WM_CLOSE:
         Hide();
         if (m_onClosed) {

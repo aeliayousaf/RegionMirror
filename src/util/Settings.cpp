@@ -83,6 +83,18 @@ AppSettings SettingsStore::Load()
             }
         } else if (key == L"ShowDebug") {
             settings.showDebug = (value == L"1" || _wcsicmp(value.c_str(), L"true") == 0);
+        } else if (key == L"OpacityPercent") {
+            try {
+                int v = std::stoi(value);
+                if (v < 10) {
+                    v = 10;
+                }
+                if (v > 100) {
+                    v = 100;
+                }
+                settings.opacityPercent = v;
+            } catch (...) {
+            }
         }
     }
     return settings;
@@ -103,6 +115,7 @@ void SettingsStore::Save(const AppSettings& settings)
     out << L"OutputMonitorId=" << settings.outputMonitorId << L"\n";
     out << L"OutputMode=" << (settings.outputMode == OutputMode::Fullscreen ? L"Fullscreen" : L"Windowed") << L"\n";
     out << L"ShowDebug=" << (settings.showDebug ? L"1" : L"0") << L"\n";
+    out << L"OpacityPercent=" << settings.opacityPercent << L"\n";
 }
 
 } // namespace rm

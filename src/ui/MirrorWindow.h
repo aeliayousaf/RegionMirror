@@ -21,6 +21,9 @@ public:
     bool ShowOnDisplay(const DisplayInfo& display, OutputMode mode, int cropW, int cropH);
     void Hide();
     void SetMode(OutputMode mode, const DisplayInfo& display, int cropW, int cropH);
+    // 10-100 percent. Uses WS_EX_LAYERED + SetLayeredWindowAttributes.
+    void SetOpacityPercent(int percent);
+    int OpacityPercent() const { return m_opacityPercent; }
 
     HWND Hwnd() const { return m_hwnd; }
     bool IsVisible() const { return m_visible; }
@@ -29,6 +32,7 @@ public:
 
     void SetClosedCallback(ClosedCallback cb) { m_onClosed = std::move(cb); }
     void SetEscapeCallback(std::function<void()> cb) { m_onEscape = std::move(cb); }
+    void SetResizeCallback(std::function<void()> cb) { m_onResize = std::move(cb); }
 
     void ExcludeFromCapture(bool exclude);
 
@@ -36,6 +40,8 @@ private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
     void ApplyPlacement(const DisplayInfo& display, OutputMode mode, int cropW, int cropH);
+    LRESULT HitTestBorderless(LPARAM lParam) const;
+    int ResizeBorderPx() const;
 
     HINSTANCE m_instance = nullptr;
     HWND m_hwnd = nullptr;
@@ -45,9 +51,11 @@ private:
     SwapChainTarget m_target;
     ClosedCallback m_onClosed;
     std::function<void()> m_onEscape;
+    std::function<void()> m_onResize;
     HICON m_iconLarge = nullptr;
     HICON m_iconSmall = nullptr;
     bool m_iconsOwned = false;
+    int m_opacityPercent = 100;
 };
 
 } // namespace rm

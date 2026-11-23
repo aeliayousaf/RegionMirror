@@ -13,6 +13,8 @@ struct AppSettings {
     std::wstring outputMonitorId;
     OutputMode outputMode = OutputMode::Windowed;
     bool showDebug = false;
+    // Mirror window opacity in percent (10-100). 100 = fully opaque.
+    int opacityPercent = 100;
 };
 
 class SettingsStore {

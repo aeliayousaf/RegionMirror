@@ -139,6 +139,7 @@ bool App::Initialize()
 
     RefreshMonitorList(true);
     m_main.SetOutputMode(m_settings.outputMode);
+    m_main.SetOpacityPercent(m_settings.opacityPercent);
     m_main.ShowDebug(m_settings.showDebug);
 
     m_status = m_captureSupported ? L"Choose a source to begin." : m_error;
@@ -500,9 +501,13 @@ void App::OnStartMirror()
             PostMessageW(m_main.Hwnd(), WM_APP_MIRROR_CLOSED, 0, 0);
         });
         m_mirror.SetEscapeCallback([this]() { OnEscapeFullscreen(); });
+        m_mirror.SetResizeCallback([this]() { OnMirrorResized(); });
         m_mirror.ExcludeFromCapture(true);
+    } else {
+        m_mirror.SetResizeCallback([this]() { OnMirrorResized(); });
     }
 
+    m_mirror.SetOpacityPercent(m_settings.opacityPercent);
     m_mirror.ShowOnDisplay(display, m_settings.outputMode, crop.width(), crop.height());
 
     RECT rc = ClientRect(m_mirror.Hwnd());
@@ -573,6 +578,20 @@ void App::OnOutputModeChanged(OutputMode mode)
     UpdateControlState();
 }
 
+void App::OnOpacityChanged(int percent)
+{
+    if (percent < 10) {
+        percent = 10;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    m_settings.opacityPercent = percent;
+    m_main.SetOpacityPercent(percent);
+    m_mirror.SetOpacityPercent(percent);
+    PersistSettings();
+}
+
 void App::OnToggleDebug()
 {
     m_settings.showDebug = !m_settings.showDebug;
@@ -612,6 +631,25 @@ void App::OnMirrorClosed()
     m_status = L"Output window closed. Mirror stopped.";
     UpdateControlState();
     UpdateStatus();
+}
+
+void App::OnMirrorResized()
+{
+    if (!m_mirroring || !m_mirror.Hwnd() || !m_d3d.IsValid()) {
+        return;
+    }
+    RECT rc{};
+    GetClientRect(m_mirror.Hwnd(), &rc);
+    const int w = std::max(1L, rc.right - rc.left);
+    const int h = std::max(1L, rc.bottom - rc.top);
+    if (!m_mirror.Target().IsValid()) {
+        if (!m_mirror.Target().Create(m_d3d.Device(), m_d3d.Factory(), m_mirror.Hwnd(), w, h)) {
+            return;
+        }
+    } else if (!m_mirror.Target().Resize(m_d3d.Device(), w, h)) {
+        return;
+    }
+    RenderMirror();
 }
 
 void App::OnEscapeFullscreen()

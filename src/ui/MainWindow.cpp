@@ -34,6 +34,9 @@ enum ControlId : int {
     IdDebug = 1014,
     IdModeWindowedLabel = 1015,
     IdModeFullscreenLabel = 1016,
+    IdOpacityLabel = 1017,
+    IdOpacitySlider = 1018,
+    IdOpacityValue = 1019,
 };
 
 void SetExcludeFromCapture(HWND hwnd, bool exclude)
@@ -65,7 +68,7 @@ MainWindow::~MainWindow()
 bool MainWindow::Create(HINSTANCE instance)
 {
     m_instance = instance;
-    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES };
+    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES | ICC_BAR_CLASSES };
     InitCommonControlsEx(&icc);
 
     if (LoadAppIcons(instance, &m_iconLarge, &m_iconSmall)) {
@@ -229,6 +232,25 @@ void MainWindow::CreateChildren()
     SendMessageW(m_widgets.modeFullscreenLabel, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
     SendMessageW(m_widgets.modeWindowed, BM_SETCHECK, BST_CHECKED, 0);
 
+    m_widgets.opacityLabel = CreateWindowExW(
+        0, L"STATIC", L"Opacity",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdOpacityLabel)), m_instance, nullptr);
+    m_widgets.opacitySlider = CreateWindowExW(
+        0, TRACKBAR_CLASSW, L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_AUTOTICKS | TBS_HORZ | TBS_TOOLTIPS,
+        0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdOpacitySlider)), m_instance, nullptr);
+    m_widgets.opacityValue = CreateWindowExW(
+        0, L"STATIC", L"100%",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdOpacityValue)), m_instance, nullptr);
+    SendMessageW(m_widgets.opacityLabel, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+    SendMessageW(m_widgets.opacityValue, WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
+    SendMessageW(m_widgets.opacitySlider, TBM_SETRANGEMIN, FALSE, 10);
+    SendMessageW(m_widgets.opacitySlider, TBM_SETRANGEMAX, TRUE, 100);
+    SendMessageW(m_widgets.opacitySlider, TBM_SETPOS, TRUE, 100);
+    SendMessageW(m_widgets.opacitySlider, TBM_SETTICFREQ, 10, 0);
+
     m_widgets.startMirror = makeButton(IdStartMirror, L"Start mirror");
     m_widgets.stopMirror = makeButton(IdStopMirror, L"Stop mirror");
     m_widgets.retry = makeButton(IdRetry, L"Retry graphics");
@@ -253,7 +275,7 @@ void MainWindow::Layout()
     const int btnW = 140;
     const int gap = 8;
     const int topBarH = btnH + margin * 2;
-    const int bottomH = 120 + (m_showDebug ? 70 : 0);
+    const int bottomH = 160 + (m_showDebug ? 70 : 0);
 
     int x = margin;
     int y = margin;
@@ -308,6 +330,16 @@ void MainWindow::Layout()
     place(m_widgets.retry, 140);
 
     y += btnH + gap;
+    x = margin;
+    SetWindowPos(m_widgets.opacityLabel, nullptr, x, y + 6, 70, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += 74;
+    const int valueW = 48;
+    const int sliderW = std::max(120, w - x - valueW - margin - gap);
+    SetWindowPos(m_widgets.opacitySlider, nullptr, x, y, sliderW, btnH, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += sliderW + gap;
+    SetWindowPos(m_widgets.opacityValue, nullptr, x, y + 6, valueW, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+
+    y += btnH + gap;
     SetWindowPos(m_widgets.status, nullptr, margin, y, std::max(100, w - margin * 2), 40,
                  SWP_NOZORDER | SWP_NOACTIVATE);
 
@@ -331,7 +363,9 @@ void MainWindow::ApplyDarkTheme()
         if (child == self->m_widgets.modeWindowedLabel ||
             child == self->m_widgets.modeFullscreenLabel ||
             child == self->m_widgets.modeWindowed ||
-            child == self->m_widgets.modeFullscreen) {
+            child == self->m_widgets.modeFullscreen ||
+            child == self->m_widgets.opacityLabel ||
+            child == self->m_widgets.opacityValue) {
             SetWindowTheme(child, L"", L"");
             return TRUE;
         }
@@ -375,6 +409,32 @@ void MainWindow::SetOutputMode(OutputMode mode)
     SendMessageW(m_widgets.modeFullscreen, BM_SETCHECK, mode == OutputMode::Fullscreen ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
+void MainWindow::SetOpacityPercent(int percent)
+{
+    if (percent < 10) {
+        percent = 10;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    if (m_widgets.opacitySlider) {
+        SendMessageW(m_widgets.opacitySlider, TBM_SETPOS, TRUE, percent);
+    }
+    if (m_widgets.opacityValue) {
+        wchar_t buf[32];
+        swprintf_s(buf, L"%d%%", percent);
+        SetWindowTextW(m_widgets.opacityValue, buf);
+    }
+}
+
+int MainWindow::GetOpacityPercent() const
+{
+    if (!m_widgets.opacitySlider) {
+        return 100;
+    }
+    return static_cast<int>(SendMessageW(m_widgets.opacitySlider, TBM_GETPOS, 0, 0));
+}
+
 void MainWindow::SetControlsEnabled(
     bool chooseSource,
     bool changeSource,
@@ -397,6 +457,9 @@ void MainWindow::SetControlsEnabled(
     EnableWindow(m_widgets.modeFullscreen, modes ? TRUE : FALSE);
     EnableWindow(m_widgets.modeWindowedLabel, modes ? TRUE : FALSE);
     EnableWindow(m_widgets.modeFullscreenLabel, modes ? TRUE : FALSE);
+    EnableWindow(m_widgets.opacityLabel, TRUE);
+    EnableWindow(m_widgets.opacitySlider, TRUE);
+    EnableWindow(m_widgets.opacityValue, TRUE);
     EnableWindow(m_widgets.retry, retry ? TRUE : FALSE);
 }
 
@@ -467,6 +530,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
         }
         return 0;
     }
+    case WM_HSCROLL:
+        if (reinterpret_cast<HWND>(lParam) == m_widgets.opacitySlider) {
+            m_app.OnOpacityChanged(GetOpacityPercent());
+            return 0;
+        }
+        break;
     case WM_SIZE:
         Layout();
         m_app.OnDpiChanged(); // also used as resize signal for swapchain
@@ -488,7 +557,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_CTLCOLORBTN: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
         HWND control = reinterpret_cast<HWND>(lParam);
-        if (control == m_widgets.modeWindowedLabel || control == m_widgets.modeFullscreenLabel) {
+        if (control == m_widgets.modeWindowedLabel ||
+            control == m_widgets.modeFullscreenLabel ||
+            control == m_widgets.opacityLabel ||
+            control == m_widgets.opacityValue) {
             SetTextColor(hdc, RGB(196, 200, 208)); // light grey
         } else {
             SetTextColor(hdc, RGB(235, 238, 245));
