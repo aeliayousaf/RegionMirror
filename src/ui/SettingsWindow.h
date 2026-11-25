@@ -26,6 +26,8 @@ public:
     void SetOutputMode(OutputMode mode);
     void SetOpacityPercent(int percent);
     int GetOpacityPercent() const;
+    void SetSharpenPercent(int percent);
+    int GetSharpenPercent() const;
     void SetAlwaysOnTop(bool enabled);
     bool GetAlwaysOnTop() const;
     void SetShowDebug(bool show);
@@ -59,6 +61,9 @@ private:
     HWND m_opacityLabel = nullptr;
     HWND m_opacitySlider = nullptr;
     HWND m_opacityValue = nullptr;
+    HWND m_sharpenLabel = nullptr;
+    HWND m_sharpenSlider = nullptr;
+    HWND m_sharpenValue = nullptr;
     HWND m_alwaysOnTop = nullptr;
     HWND m_alwaysOnTopLabel = nullptr;
     HWND m_showDebug = nullptr;

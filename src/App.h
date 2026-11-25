@@ -31,6 +31,7 @@ public:
     void OnOutputMonitorChanged(int index);
     void OnOutputModeChanged(OutputMode mode);
     void OnOpacityChanged(int percent);
+    void OnSharpenChanged(int percent);
     void OnAlwaysOnTopChanged(bool enabled);
     void OnShowDebugChanged(bool show);
     void OnRetryGraphics();

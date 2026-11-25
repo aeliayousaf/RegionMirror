@@ -18,7 +18,9 @@ cbuffer Constants : register(b0)
     float4 selectionUV;     // selection in texture UV (for overlay)
     float2 contentScale;    // contentSize / textureSize
     float overlayMode;      // 0 = off, 1 = show selection overlay
-    float pad0;
+    float sharpenAmount;    // 0 = off, 1 = max unsharp mask
+    float2 texelSize;       // 1 / texture size
+    float2 padSharpen;
     float4 barColor;
     float4 dimColor;
     float4 borderColor;
@@ -46,6 +48,19 @@ float4 PSMain(VSOut i) : SV_Target
 {
     float2 uv = lerp(cropUV.xy, cropUV.zw, i.uv);
     float4 color = srcTex.Sample(samp, uv);
+
+    // Unsharp mask: center + amount * (center - 4-neighbor blur).
+    if (sharpenAmount > 0.001)
+    {
+        float3 blur =
+            srcTex.Sample(samp, uv + float2(-texelSize.x, 0)).rgb +
+            srcTex.Sample(samp, uv + float2( texelSize.x, 0)).rgb +
+            srcTex.Sample(samp, uv + float2(0, -texelSize.y)).rgb +
+            srcTex.Sample(samp, uv + float2(0,  texelSize.y)).rgb;
+        blur *= 0.25;
+        float strength = sharpenAmount * 2.5;
+        color.rgb = saturate(color.rgb + (color.rgb - blur) * strength);
+    }
 
     if (overlayMode > 0.5)
     {
@@ -107,7 +122,9 @@ struct alignas(16) Constants {
     float selectionUV[4];
     float contentScale[2];
     float overlayMode;
-    float pad0;
+    float sharpenAmount;
+    float texelSize[2];
+    float padSharpen[2];
     float barColor[4];
     float dimColor[4];
     float borderColor[4];
@@ -325,7 +342,8 @@ bool GpuRenderer::Draw(
     SizeI textureSize,
     FloatRect normalizedCrop,
     const RenderOverlay* overlay,
-    bool clearOnly)
+    bool clearOnly,
+    float sharpenAmount)
 {
     if (!context || !target.IsValid() || !m_vs || !m_ps) {
         return false;
@@ -410,6 +428,11 @@ bool GpuRenderer::Draw(
         ? static_cast<float>(contentSize.height) / static_cast<float>(textureSize.height)
         : 1.f;
     cb.overlayMode = overlayMode;
+    cb.sharpenAmount = std::clamp(sharpenAmount, 0.f, 1.f);
+    cb.texelSize[0] = textureSize.width > 0 ? 1.f / static_cast<float>(textureSize.width) : 0.f;
+    cb.texelSize[1] = textureSize.height > 0 ? 1.f / static_cast<float>(textureSize.height) : 0.f;
+    cb.padSharpen[0] = 0.f;
+    cb.padSharpen[1] = 0.f;
     cb.barColor[0] = clear[0];
     cb.barColor[1] = clear[1];
     cb.barColor[2] = clear[2];

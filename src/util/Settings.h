@@ -16,6 +16,8 @@ struct AppSettings {
     // Mirror window opacity in percent (10-100). 100 = fully opaque.
     int opacityPercent = 100;
     bool alwaysOnTop = false;
+    // Real-time unsharp-mask amount for the mirror feed (0-100). 0 = off.
+    int sharpenPercent = 0;
 };
 
 class SettingsStore {

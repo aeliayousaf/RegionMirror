@@ -97,6 +97,18 @@ AppSettings SettingsStore::Load()
             }
         } else if (key == L"AlwaysOnTop") {
             settings.alwaysOnTop = (value == L"1" || _wcsicmp(value.c_str(), L"true") == 0);
+        } else if (key == L"SharpenPercent") {
+            try {
+                int v = std::stoi(value);
+                if (v < 0) {
+                    v = 0;
+                }
+                if (v > 100) {
+                    v = 100;
+                }
+                settings.sharpenPercent = v;
+            } catch (...) {
+            }
         }
     }
     return settings;
@@ -119,6 +131,7 @@ void SettingsStore::Save(const AppSettings& settings)
     out << L"ShowDebug=" << (settings.showDebug ? L"1" : L"0") << L"\n";
     out << L"OpacityPercent=" << settings.opacityPercent << L"\n";
     out << L"AlwaysOnTop=" << (settings.alwaysOnTop ? L"1" : L"0") << L"\n";
+    out << L"SharpenPercent=" << settings.sharpenPercent << L"\n";
 }
 
 } // namespace rm

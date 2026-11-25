@@ -46,6 +46,7 @@ public:
 
     // Renders crop into the target with aspect-preserving letterbox/pillarbox.
     // If overlay.enabled, dims outside the selection and draws a border (preview editing).
+    // sharpenAmount is 0..1 (unsharp mask strength).
     bool Draw(
         ID3D11DeviceContext* context,
         SwapChainTarget& target,
@@ -54,7 +55,8 @@ public:
         SizeI textureSize,
         FloatRect normalizedCrop,
         const RenderOverlay* overlay,
-        bool clearOnly);
+        bool clearOnly,
+        float sharpenAmount = 0.f);
 
 private:
     bool CreateShaders(ID3D11Device* device);

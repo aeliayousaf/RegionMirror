@@ -31,6 +31,9 @@ enum ControlId : int {
     IdShowDebugLabel = 2012,
     IdRetry = 2013,
     IdClose = 2014,
+    IdSharpenLabel = 2015,
+    IdSharpenSlider = 2016,
+    IdSharpenValue = 2017,
 };
 
 void EnableDarkTitleBar(HWND hwnd)
@@ -88,7 +91,7 @@ bool SettingsWindow::Create(HINSTANCE instance, HWND owner)
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         420,
-        360,
+        420,
         owner,
         nullptr,
         instance,
@@ -215,6 +218,17 @@ void SettingsWindow::CreateChildren()
     SendMessageW(m_opacitySlider, TBM_SETPOS, TRUE, 100);
     SendMessageW(m_opacitySlider, TBM_SETTICFREQ, 10, 0);
 
+    m_sharpenLabel = makeStatic(IdSharpenLabel, L"Sharpen");
+    m_sharpenSlider = CreateWindowExW(
+        0, TRACKBAR_CLASSW, L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_AUTOTICKS | TBS_HORZ | TBS_TOOLTIPS,
+        0, 0, 10, 10, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IdSharpenSlider)), m_instance, nullptr);
+    m_sharpenValue = makeStatic(IdSharpenValue, L"0%");
+    SendMessageW(m_sharpenSlider, TBM_SETRANGEMIN, FALSE, 0);
+    SendMessageW(m_sharpenSlider, TBM_SETRANGEMAX, TRUE, 100);
+    SendMessageW(m_sharpenSlider, TBM_SETPOS, TRUE, 0);
+    SendMessageW(m_sharpenSlider, TBM_SETTICFREQ, 10, 0);
+
     m_alwaysOnTop = CreateWindowExW(
         0, L"BUTTON", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
@@ -282,6 +296,15 @@ void SettingsWindow::Layout()
 
     y += rowH + gap;
     x = margin;
+    SetWindowPos(m_sharpenLabel, nullptr, x, y + 6, 70, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += 74;
+    const int sharpenSliderW = std::max(120, w - x - valueW - margin - 8);
+    SetWindowPos(m_sharpenSlider, nullptr, x, y, sharpenSliderW, rowH, SWP_NOZORDER | SWP_NOACTIVATE);
+    x += sharpenSliderW + 8;
+    SetWindowPos(m_sharpenValue, nullptr, x, y + 6, valueW, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+
+    y += rowH + gap;
+    x = margin;
     SetWindowPos(m_alwaysOnTop, nullptr, x, y + 5, radioSize, radioSize, SWP_NOZORDER | SWP_NOACTIVATE);
     x += radioSize + 4;
     SetWindowPos(m_alwaysOnTopLabel, nullptr, x, y + 6, 160, 20, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -309,6 +332,8 @@ void SettingsWindow::ApplyDarkTheme()
             child == self->m_modeFullscreen ||
             child == self->m_opacityLabel ||
             child == self->m_opacityValue ||
+            child == self->m_sharpenLabel ||
+            child == self->m_sharpenValue ||
             child == self->m_alwaysOnTop ||
             child == self->m_alwaysOnTopLabel ||
             child == self->m_showDebug ||
@@ -367,6 +392,32 @@ int SettingsWindow::GetOpacityPercent() const
         return 100;
     }
     return static_cast<int>(SendMessageW(m_opacitySlider, TBM_GETPOS, 0, 0));
+}
+
+void SettingsWindow::SetSharpenPercent(int percent)
+{
+    if (percent < 0) {
+        percent = 0;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    if (m_sharpenSlider) {
+        SendMessageW(m_sharpenSlider, TBM_SETPOS, TRUE, percent);
+    }
+    if (m_sharpenValue) {
+        wchar_t buf[32];
+        swprintf_s(buf, L"%d%%", percent);
+        SetWindowTextW(m_sharpenValue, buf);
+    }
+}
+
+int SettingsWindow::GetSharpenPercent() const
+{
+    if (!m_sharpenSlider) {
+        return 0;
+    }
+    return static_cast<int>(SendMessageW(m_sharpenSlider, TBM_GETPOS, 0, 0));
 }
 
 void SettingsWindow::SetAlwaysOnTop(bool enabled)
@@ -486,6 +537,10 @@ LRESULT SettingsWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
             m_app.OnOpacityChanged(GetOpacityPercent());
             return 0;
         }
+        if (reinterpret_cast<HWND>(lParam) == m_sharpenSlider) {
+            m_app.OnSharpenChanged(GetSharpenPercent());
+            return 0;
+        }
         break;
     case WM_SIZE:
         Layout();
@@ -498,6 +553,8 @@ LRESULT SettingsWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
             control == m_modeFullscreenLabel ||
             control == m_opacityLabel ||
             control == m_opacityValue ||
+            control == m_sharpenLabel ||
+            control == m_sharpenValue ||
             control == m_alwaysOnTopLabel ||
             control == m_showDebugLabel ||
             control == m_monitorLabel) {

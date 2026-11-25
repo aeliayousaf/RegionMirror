@@ -149,6 +149,7 @@ bool App::Initialize()
     RefreshMonitorList(true);
     m_settingsUi.SetOutputMode(m_settings.outputMode);
     m_settingsUi.SetOpacityPercent(m_settings.opacityPercent);
+    m_settingsUi.SetSharpenPercent(m_settings.sharpenPercent);
     m_settingsUi.SetAlwaysOnTop(m_settings.alwaysOnTop);
     m_settingsUi.SetShowDebug(m_settings.showDebug);
     m_main.ShowDebug(m_settings.showDebug);
@@ -558,9 +559,27 @@ void App::OnStopMirror()
     m_mirroring = false;
     ClearMirrorOutput();
     m_mirror.Hide();
-    m_status = m_capture.IsActive() ? L"Mirror stopped." : m_status;
+
+    // Drop the preview bounding box; user can draw a new region to start again.
+    m_hasSelection = false;
+    m_normalizedCrop = { 0.f, 0.f, 1.f, 1.f };
+    m_draftNormalized = {};
+    m_editOp = EditOp::None;
+    m_editHit = SelectionHit::None;
+    m_dragActive = false;
+    m_selectMode = SelectMode::Idle;
+    m_autoStartAfterSelect = false;
+
+    if (m_capture.IsActive()) {
+        m_autoStartAfterSelect = true;
+        m_selectMode = SelectMode::Selecting;
+        m_status = L"Mirror stopped. Drag on the preview to select a new region.";
+    }
+
     UpdateControlState();
     UpdateStatus();
+    m_previewNeedsPaint = true;
+    RenderPreview(true);
 }
 
 void App::OnOutputMonitorChanged(int index)
@@ -606,6 +625,24 @@ void App::OnOpacityChanged(int percent)
     m_settingsUi.SetOpacityPercent(percent);
     m_mirror.SetOpacityPercent(percent);
     PersistSettings();
+}
+
+void App::OnSharpenChanged(int percent)
+{
+    if (percent < 0) {
+        percent = 0;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    m_settings.sharpenPercent = percent;
+    m_settingsUi.SetSharpenPercent(percent);
+    PersistSettings();
+    m_previewNeedsPaint = true;
+    if (m_mirroring) {
+        RenderMirror();
+    }
+    RenderPreview(true);
 }
 
 void App::OnAlwaysOnTopChanged(bool enabled)
@@ -780,6 +817,7 @@ void App::RenderPreview(bool force)
     }
 
     const bool clearOnly = !m_lastFrame.valid;
+    const float sharpen = static_cast<float>(m_settings.sharpenPercent) / 100.f;
     m_renderer.Draw(
         m_d3d.Context(),
         m_previewTarget,
@@ -788,7 +826,8 @@ void App::RenderPreview(bool force)
         { m_lastFrame.textureWidth, m_lastFrame.textureHeight },
         crop,
         overlay.enabled ? &overlay : nullptr,
-        clearOnly);
+        clearOnly,
+        sharpen);
 
     m_previewTarget.Present(1);
     m_diagnostics.OnPresent();
@@ -819,6 +858,7 @@ void App::RenderMirror()
     }
 
     m_diagnostics.SetCropSize(cropPixels.width(), cropPixels.height());
+    const float sharpen = static_cast<float>(m_settings.sharpenPercent) / 100.f;
     m_renderer.Draw(
         m_d3d.Context(),
         m_mirror.Target(),
@@ -827,7 +867,8 @@ void App::RenderMirror()
         { m_lastFrame.textureWidth, m_lastFrame.textureHeight },
         m_normalizedCrop,
         nullptr,
-        false);
+        false,
+        sharpen);
     m_mirror.Target().Present(1);
     m_diagnostics.OnPresent();
 }
